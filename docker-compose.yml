@@ -1,0 +1,171 @@
+version: "3.8"
+
+services:
+  warehouse-db:
+    image: postgres:14-alpine
+    restart: always
+    container_name: warehouse-db
+    ports:
+      - "5432:5432"
+    expose:
+      - 5432
+    volumes:
+      - postgres:/data/postgres
+    environment:
+      - POSTGRES_PASSWORD=mysecretpassword
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=warehouse
+    networks:
+      - warehouse_db_net
+
+
+  productdb:
+    image: postgres:14-alpine
+    restart: always
+    container_name: productdb
+    ports:
+      - "5433:5432"
+    expose:
+      - 5433
+    volumes:
+      - postgres:/data/postgres
+    environment:
+      - POSTGRES_PASSWORD=mysecretpassword
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=product
+    networks:
+      - product_db_net
+
+  rabbitmq:
+      image: rabbitmq:3.8-management-alpine
+      container_name: rabbitmq
+      ports:
+        - "5673:5672"
+        - "15673:15672"
+      networks:
+        - rabbitmq_nodejs
+
+  currency-service:
+    container_name: currency-service
+    build:
+      context: ./currency-service
+      dockerfile: ./Dockerfile
+    ports:
+      - "9099:9099"
+    expose:
+      - 9099
+    volumes:
+      - ./:/app/app
+    restart: unless-stopped
+    depends_on:
+      - rabbitmq
+    networks:
+      - rabbitmq_nodejs
+
+  price-service:
+    container_name: price-service
+    build:
+      context: ./price-service
+      dockerfile: ./Dockerfile
+    ports:
+      - "8099:8099"
+    expose:
+      - 8099
+    volumes:
+      - ./:/app/app
+    restart: unless-stopped
+    depends_on:
+      - rabbitmq
+    networks:
+      - rabbitmq_nodejs
+
+  warehouse:
+    container_name: warehouse
+    build:
+      context: ./warehouse
+      dockerfile: ./Dockerfile
+    ports:
+      - "8010:8010"
+      - "8082:8082"
+    expose:
+      - 8010
+      - 8082
+    volumes:
+      - ./:/app/app
+    restart: unless-stopped
+    depends_on:
+      - warehouse-db
+    networks:
+      - warehouse_db_net
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:19.0.2
+    container_name: keycloak
+    ports:
+      - 8080:8080
+    volumes:
+      - keycloak:/var/lib/keycloak/data
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+    command: [ "start-dev" ]
+
+  frontend:
+      container_name: frontend
+      build: ./frontend
+      volumes:
+        - '.:/app'
+        - '/app/node_modules'
+      ports:
+        - 3000:3000
+      stdin_open: true
+      environment:
+        - CHOKIDAR_USEPOLLING=true
+      command: npm start
+
+
+
+  #productservice:
+  #  depends_on:
+  #    - productdb
+   # container_name: productservice
+  #  build:
+   #   context: ./product-service
+  #    dockerfile: ./Dockerfile
+  #  ports:
+   #   - "9095:9095"
+  #    - "8085:8085"
+  #  expose:
+  #    - 9095
+  #    - 8085
+  #  volumes:
+  #    - ./:/app/app
+   # restart: always
+   # environment:
+   #   - SPRING_DATASOURCE_USERNAME=user
+  #    - SPRING_DATASOURCE_PASSWORD=pw
+  #    - SPRING_DATASOURCE_URL= jdbc:mysql://productdb:3306/product?autoReconnect=true&allowPublicKeyRetrieval=true&useSSL=false
+   # links:
+   #   - productdb
+  #  networks:
+  #    - rabbitmq_nodejs
+   #   - product_db_net
+
+
+networks:
+  rabbitmq_nodejs:
+    name: rabbitmq_nodejs
+    driver: bridge
+  auth-network:
+    driver: bridge
+  warehouse_db_net:
+    name: warehouse_db_net
+    driver: bridge
+  product_db_net:
+    name: product_db_net
+    driver: bridge
+
+volumes:
+  postgres:
+  mysql:
+  keycloak:
